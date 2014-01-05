@@ -25,6 +25,8 @@
 pcap_t *pc = NULL;
 uint64_t number = 0;
 uint32_t timeout = ALARM_TIME;
+uint64_t fixed_number_pkt = 0;
+char use_timeout = 1;
 uint64_t synflag = 1, finflag = 1, synackflag = 1;
 uint64_t pktdelta = 0;
 FILE *output;
@@ -46,7 +48,9 @@ void signal_handler(int s)
         break;
     }
     signal(SIGINT, signal_handler);
-    signal(SIGALRM, signal_handler);
+    if (use_timeout == 1) {
+        signal(SIGALRM, signal_handler);
+    }
 }
 
 char errbuf[PCAP_ERRBUF_SIZE];
@@ -61,11 +65,13 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
     u_short etht;
     int i = 0;
     number++;
-    //printf("%i:%i accept packet: ", h->ts.tv_sec, h->ts.tv_usec);
-    //for (i=0; i<16; ++i) {
-    //    printf("%02X ", bytes[i]);
-    //}
-    //printf("\n");
+#ifdef DEBUG
+    printf("%i:%i accept packet: ", h->ts.tv_sec, h->ts.tv_usec);
+    for (i=0; i<16; ++i) {
+        printf("%02X ", bytes[i]);
+    }
+    printf("\n");
+#endif
     ethtype = &eth->h_proto;
     if (*ethtype == 0x0) {
         ethtype++;
@@ -83,46 +89,64 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
     /* check if we found TCP */
     if (tcp != NULL) {
 #ifdef __FAVOR_BSD
-        //printf("%X", tcp->th_flags);
+#   ifdef DEBUG
+        printf("%X", tcp->th_flags);
+#   endif
         if (tcp->th_flags & TH_SYN) {
-            //printf("SYN ");
-            //i = 1;
+#   ifdef DEBUG
+            printf("SYN ");
+            i = 1;
+#   endif
             if (tcp->th_flags & TH_ACK) {
-                //printf("ACK ");
+#   ifdef DEBUG
+                printf("ACK ");
+                i = 1;
+#   endif
                 synackflag++;
-                //i = 1;
             } else {
                 synflag++;
             }
         }
         if (tcp->th_flags & TH_FIN) {
-            //printf("FIN ");
+#   ifdef DEBUG
+            printf("FIN ");
+            i = 1;
+#   endif
             finflag++;
-            //i = 1;
         }
-        //if (i == 1) {
-        //    printf("\n");
-        //}
+#   ifdef DEBUG
+        if (i == 1) {
+            printf("\n");
+        }
+#   endif
 #else
         if (tcp->syn) {
-            //printf("SYN ");
-            //i = 1;
+#   ifdef DEBUG
+            printf("SYN ");
+            i = 1;
+#   endif
             if (tcp->ack) {
-                //printf("ACK ");
+#   ifdef DEBUG
+                printf("ACK ");
+                i = 1;
+#   endif
                 synackflag++;
-                //i = 1;
             } else {
                 synflag++;
             }
         }
         if (tcp->fin) {
-            //printf("FIN ");
+#   ifdef DEBUG
+            printf("FIN ");
+            i = 1;
+#   endif
             finflag++;
-            //i = 1;
         }
-        //if (i == 1) {
-        //    printf("\n");
-        //}
+#   ifdef DEBUG
+        if (i == 1) {
+            printf("\n");
+        }
+#   endif
 #endif
     }
     
@@ -152,6 +176,7 @@ int main(int argc, char **argv)
     const char *source = NULL;
     const char *outputfile = NULL;
     struct bpf_program compprog;
+    uint64_t fixed_number_cntr = 0;
 
     while (1) {
         int this_option_optind = optind ? optind : 1;
@@ -159,12 +184,13 @@ int main(int argc, char **argv)
         static struct option long_options[] = {
             {"source",	required_argument, 0, 's'},
             {"timeout", required_argument, 0, 't'},
+            {"number", required_argument, 0, 'n'},
             {"output", required_argument, 0, 'o'},
             {"help", no_argument, 0, 'h'},
             {0, 0, 0, 0}
         };
 
-        c = getopt_long(argc, argv, "s:ht:o:", long_options, &option_index);
+        c = getopt_long(argc, argv, "s:ht:n:o:", long_options, &option_index);
         if (c == -1)
             break;
         switch (c) {
@@ -176,12 +202,21 @@ int main(int argc, char **argv)
                 timeout = ALARM_TIME;
             }
             break;
+        case 'n':
+            if (sscanf(optarg, "%llu", fixed_number_pkt) != 1) {
+                use_timeout = 1;
+                fixed_number_pkt = 0;
+                printf("Using timeout, because number of packets is not valid.");
+            } else {
+                use_timeout = 0;
+            }
         case 'o':
             outputfile = optarg;
             break;
         case 'h':
             printf("%s\t-h|--help\n", argv[0]);
             printf("\t-o|--output=<output filepath>\n");
+            printf("\t-n|--number=<fixed number of packets>\n");
             printf("\t-s|--source=any|eth0|...\n");
             printf("\t-t|--timeout=<seconds>\n");
             exit(0);
@@ -214,7 +249,9 @@ int main(int argc, char **argv)
     }
 
     signal(SIGINT, signal_handler);
-    signal(SIGALRM, signal_handler);
+    if (use_timeout == 1) {
+        signal(SIGALRM, signal_handler);
+    }
 
     if (pcap_compile(pc, &compprog, "tcp", 0,  PCAP_NETMASK_UNKNOWN) == -1) {
         errx(3, "Error: %s\n", pcap_geterr(pc));
@@ -224,10 +261,17 @@ int main(int argc, char **argv)
         errx(4, "Error: %s\n", pcap_geterr(pc));
     }
 
-    alarm(timeout);
+    if (use_timeout == 1) {
+        alarm(timeout);
+    }
     fprintf(output, "Time\tS\tSA\tallSYN\tF\tS/F\tallSYN/F\tS/SA\tSA/F\tpkts\tdeltapkts\n");
     while (process_traffic) {
         pcap_dispatch(pc, 0, packet_handler, NULL);
+        if (use_timeout == 0) {
+            if (++fixed_number_cntr == fixed_number_pkt) {
+                analyse_results = 1;
+            }
+        }
         if (analyse_results) {
             partial_results();
         }

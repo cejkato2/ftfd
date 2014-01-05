@@ -10,6 +10,11 @@ AM_INIT_AUTOMAKE(silent-rules)
 # Checks for programs.
 AC_PROG_CC
 
+AC_ARG_ENABLE([debug], AC_HELP_STRING([--enable-debug], [Enable debug compilation]),
+[ if test "x$enableval" = "xyes"; then
+    CPPFLAGS+=" -DDEBUG "
+fi ])
+
 # Checks for libraries.
 # FIXME: Replace `main' with a function in `-lpcap':
 AC_CHECK_LIB([pcap], [pcap_create])
