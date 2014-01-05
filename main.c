@@ -24,9 +24,10 @@
 
 pcap_t *pc = NULL;
 uint64_t number = 0;
-
+uint32_t timeout = ALARM_TIME;
 uint64_t synflag = 1, finflag = 1, synackflag = 1;
 uint64_t pktdelta = 0;
+FILE *output;
 
 char analyse_results = 0, process_traffic = 1;
 
@@ -40,7 +41,7 @@ void signal_handler(int s)
         process_traffic = 0;
         break;
     case SIGALRM:
-        alarm(ALARM_TIME);
+        alarm(timeout);
         analyse_results = 1;
         break;
     }
@@ -129,54 +130,81 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
 
 void partial_results()
 {
-    printf("\n%d Accepted: %i packets\n", time(NULL), number);
-    printf("S/F %llu/%llu = %f\n", synflag, finflag, (double) synflag / (double) finflag);
-    printf("S/SA %llu/%llu = %f\n", synflag, synackflag, (double) synflag / (double) synackflag);
-    printf("SA/F %llu/%llu = %f\n", synackflag, finflag, (double) synackflag / (double) finflag);
+    fprintf(output, "%llu\t%llu\t%llu\t%llu\t%f\t%f\t%f\t%llu\t%llu\n",
+            time(NULL),
+            synflag, synackflag, finflag,
+            (double) synflag / (double) finflag,
+            (double) synflag / (double) synackflag,
+            (double) synackflag / (double) finflag,
+            number, number - pktdelta);
+    pktdelta = number;
     synflag = finflag = synackflag = 1;
     analyse_results = 0;
 }
 
 int main(int argc, char **argv)
 {
-	int c;
-	int digit_optind = 0;
-	const char *source = NULL;
+    int c;
+    int digit_optind = 0;
+    const char *source = NULL;
+    const char *outputfile = NULL;
     struct bpf_program compprog;
 
-	while (1) {
-		int this_option_optind = optind ? optind : 1;
-		int option_index = 0;
-		static struct option long_options[] = {
-			{"source",	required_argument, 0, 's'},
-			{"help", no_argument, 0, 'h'},
-			{0, 0, 0, 0}
-		};
+    while (1) {
+        int this_option_optind = optind ? optind : 1;
+        int option_index = 0;
+        static struct option long_options[] = {
+            {"source",	required_argument, 0, 's'},
+            {"timeout", required_argument, 0, 't'},
+            {"output", required_argument, 0, 'o'},
+            {"help", no_argument, 0, 'h'},
+            {0, 0, 0, 0}
+        };
 
-		c = getopt_long(argc, argv, "s:h", long_options, &option_index);
-		if (c == -1)
-						 break;
-		switch (c) {
-		case 's':
-			source = optarg;
-			break;
-		case 'h':
-			printf("%s\t-h|--help\n\t-s|--source=any|eth0|...\n", argv[0]);
-			exit(0);
-			break;
-		}
-	}
+        c = getopt_long(argc, argv, "s:ht:o:", long_options, &option_index);
+        if (c == -1)
+            break;
+        switch (c) {
+        case 's':
+            source = optarg;
+            break;
+        case 't':
+            if (sscanf(optarg, "%u", &timeout) != 1) {
+                timeout = ALARM_TIME;
+            }
+            break;
+        case 'o':
+            outputfile = optarg;
+        case 'h':
+            printf("%s\t-h|--help\n", argv[0]);
+            printf("\t-o|--output=<output filepath>\n");
+            printf("\t-s|--source=any|eth0|...\n");
+            printf("\t-t|--timeout=<seconds>\n");
+            exit(0);
+            break;
+        }
+    }
 
-	if (source == NULL) {
+    if (source == NULL) {
         warnx("You have not specified -s with interface, using \"any\", which probably does not work!!!");
-		source = "any";
-	}
+        source = "any";
+    }
 
-	pc = pcap_create(source, errbuf);
-	if (pc == NULL) {
-		errx(1, "Initialization of libpcap failed.");
-	}
-		
+    if (outputfile != NULL) {
+        output = fopen(outputfile, "w");
+        if (output == NULL) {
+            fprintf(stderr, "Cannot open file (%s), using stdout.\n", outputfile);
+            output = stdout;
+        }
+    } else {
+        output = stdout;
+    }
+
+    pc = pcap_create(source, errbuf);
+    if (pc == NULL) {
+        errx(1, "Initialization of libpcap failed.");
+    }
+
     if (pcap_activate(pc) != 0) {
         errx(2, "%s", pcap_geterr(pc));
     }
@@ -192,15 +220,16 @@ int main(int argc, char **argv)
         errx(4, "Error: %s\n", pcap_geterr(pc));
     }
 
-    alarm(ALARM_TIME);
+    alarm(timeout);
+    fprintf(output, "Time\tS\tSA\tF\tS/F\tS/SA\tSA/F\tpkts\tdeltapkts\n");
     while (process_traffic) {
         pcap_dispatch(pc, 0, packet_handler, NULL);
         if (analyse_results) {
             partial_results();
         }
     }
-    
+
     partial_results();
-	return 0;
+    return 0;
 }
 
