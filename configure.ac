@@ -15,13 +15,15 @@ AC_PROG_CC
 AC_CHECK_LIB([pcap], [pcap_create])
 
 # Checks for header files.
-AC_CHECK_HEADERS([arpa/inet.h netinet/in.h stdint.h stdlib.h sys/socket.h unistd.h])
+AC_CHECK_HEADERS([arpa/inet.h netinet/in.h netinet/ether.h netinet/ip.h netinet/ip6.h netinet/tcp.h stdint.h stdlib.h sys/socket.h unistd.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_UINT16_T
+AC_TYPE_UINT32_T
 AC_TYPE_UINT64_T
 
 # Checks for library functions.
+AC_CHECK_FUNCS([alarm])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
