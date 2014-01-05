@@ -130,10 +130,12 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
 
 void partial_results()
 {
-    fprintf(output, "%llu\t%llu\t%llu\t%llu\t%f\t%f\t%f\t%llu\t%llu\n",
+    uint64_t allsyn = (synflag + synackflag);
+    fprintf(output, "%llu\t%llu\t%llu\t%llu\t%llu\t%f\t%f\t%f\t%f\t%llu\t%llu\n",
             time(NULL),
-            synflag, synackflag, finflag,
+            synflag, synackflag, allsyn, finflag,
             (double) synflag / (double) finflag,
+            (double) allsyn / (double) finflag,
             (double) synflag / (double) synackflag,
             (double) synackflag / (double) finflag,
             number, number - pktdelta);
@@ -222,7 +224,7 @@ int main(int argc, char **argv)
     }
 
     alarm(timeout);
-    fprintf(output, "Time\tS\tSA\tF\tS/F\tS/SA\tSA/F\tpkts\tdeltapkts\n");
+    fprintf(output, "Time\tS\tSA\tallSYN\tF\tS/F\tallSYN/F\tS/SA\tSA/F\tpkts\tdeltapkts\n");
     while (process_traffic) {
         pcap_dispatch(pc, 0, packet_handler, NULL);
         if (analyse_results) {
