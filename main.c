@@ -140,6 +140,7 @@ void partial_results()
     pktdelta = number;
     synflag = finflag = synackflag = 1;
     analyse_results = 0;
+    fflush(output);
 }
 
 int main(int argc, char **argv)
