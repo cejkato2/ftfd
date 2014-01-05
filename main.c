@@ -178,6 +178,7 @@ int main(int argc, char **argv)
             break;
         case 'o':
             outputfile = optarg;
+            break;
         case 'h':
             printf("%s\t-h|--help\n", argv[0]);
             printf("\t-o|--output=<output filepath>\n");
